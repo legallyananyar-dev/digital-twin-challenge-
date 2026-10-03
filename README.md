@@ -190,10 +190,16 @@ Using the twin on one patient (end of Notebook 2): `forecast_patient(profile, in
 
 **What is different here:** a GIFT-anchored post-arthroplasty setting, a twin with live Bayesian updating, dose what-if comparison validated against simulator ground truth, uncertainty bands, and a demonstration of why mechanistic structure matters for causal questions.
 
-## 9. Team
+## 9. Team and institution
 
-- **[Your name]**: project lead, modeling
-- **[Friend's name]**: data acquisition
+| Name | Role |
+|---|---|
+| **B. Ananya Raghu (Anu)** | Project lead and modeling. Third-year B.Pharm student. |
+| **[Teammate name]** | Data acquisition. [Year and course] |
+
+**Institution:** Saraswathi Vidya Bhavan's College of Pharmacy, Dombivli (East), Maharashtra (University of Mumbai).
+**Challenge:** Happiest Health Digital Twin Challenge 2026.
+**Contact:** [email address]
 
 ## 10. License
 
