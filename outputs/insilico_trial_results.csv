@@ -1,0 +1,4 @@
+arm,"INR>=4 (any, days 1-11)",INR>=5 (any),TTR 2-3 (days 4-11),mean |INR-2.5| days 4-11
+Flat 5 mg/day start (reference),0.513,0.23,0.325,0.975
+Clinical-factors start (no genotype),0.258,0.071,0.38,0.775
+Genotype-guided start,0.173,0.025,0.431,0.686
