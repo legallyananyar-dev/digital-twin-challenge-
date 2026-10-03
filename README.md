@@ -195,11 +195,11 @@ Using the twin on one patient (end of Notebook 2): `forecast_patient(profile, in
 | Name | Role |
 |---|---|
 | **B. Ananya Raghu (Anu)** | Project lead and modeling. Third-year B.Pharm student. |
-| **[Teammate name]** | Data acquisition. [Year and course] |
+
 
 **Institution:** Saraswathi Vidya Bhavan's College of Pharmacy, Dombivli (East), Maharashtra (University of Mumbai).
 **Challenge:** Happiest Health Digital Twin Challenge 2026.
-**Contact:** [email address]
+**Contact:** [legally.ananyar@gmail.com]
 
 ## 10. License
 
