@@ -1,216 +1,207 @@
-# digital-twin-challenge-
 # WarfarinTwin: A GIFT-Anchored Digital Twin for Post-Arthroplasty Warfarin Dosing
 
-> **Status:** In development. Built for the Happiest Health *Digital Twin Challenge 2026* (Reimagining and Reforming Healthcare in India Summit, Bengaluru).
-> **Disclaimer:** Research and educational prototype only. It is **not** a medical device and must not be used to make real dosing decisions.
+> **Status:** Working prototype built for the Happiest Health *Digital Twin Challenge 2026*.
+> **Disclaimer:** Research and educational prototype only. It is **not** a medical device and must not be used for real dosing decisions.
+> **Evidence level:** Part 1 uses real patient data (IWPC). Part 2 is a **simulation study**: it shows the method works under stated assumptions, not that it works on real patients yet.
 
 ---
 
-## 1. The problem in plain language
+## 1. The problem
 
-Warfarin is a widely used blood thinner, often given after hip or knee replacement surgery to prevent clots. It has a **narrow therapeutic index**: too much causes bleeding, too little allows clots. The dose a person needs varies enormously between individuals, driven partly by genetics (notably **CYP2C9**, **VKORC1**, and **CYP4F2**), age, body size, and interacting drugs.
+Warfarin is a blood thinner often given after hip or knee replacement to prevent clots. It has a **narrow therapeutic index**: too much causes bleeding, too little allows clots. The dose a person needs varies widely, driven partly by genetics (**CYP2C9**, **VKORC1**, **CYP4F2**), age, body size, and interacting drugs. Doctors track the effect with the **INR** blood test (goal about 2 to 3; **INR >= 4** is a bleeding warning sign).
 
-Doctors track the effect using the **INR** (International Normalized Ratio), a blood clotting measure. The usual therapeutic goal after arthroplasty is around INR 2 to 3, and an **INR of 4 or higher** is a warning sign for bleeding.
+**Clinical anchor: the GIFT trial** (Gage et al., *JAMA* 2017;318(12):1115-1124). In 1,650 patients aged 65+ undergoing elective hip or knee arthroplasty, genotype-guided warfarin dosing gave fewer adverse events (10.8% vs 14.7%), driven mainly by fewer INR >= 4 episodes.
 
-## 2. Clinical anchor: the GIFT trial
+WarfarinTwin asks: *can a virtual patient, updated by each day's INR, forecast what happens next, warn before INR >= 4, and tell a clinician what a different dose would do?*
 
-This project is built around the **Genetic Informatics Trial of Warfarin to Prevent Deep Vein Thrombosis (GIFT)** (Gage et al., *JAMA* 2017;318(12):1115-1124):
+## 2. What we built
 
-- 1,650 patients aged 65+ undergoing elective hip or knee arthroplasty.
-- Randomized to **genotype-guided** vs **clinically guided** warfarin dosing for the first 11 days, using the WarfarinDosing.org algorithm (genotype arm added VKORC1, CYP2C9, and CYP4F2 variants).
-- Primary composite outcome (major bleeding, INR ≥4 within 30 days, VTE within 60 days, or death within 30 days): **10.8% genotype-guided vs 14.7% clinically guided**.
-- The benefit was driven mainly by fewer episodes of INR ≥4.
-
-WarfarinTwin asks: *can we build a virtual patient that reproduces this kind of trajectory and warns clinicians before an unsafe INR happens?*
-
-## 3. What is a digital twin here?
-
-A **digital twin** is a virtual replica of a patient that is continuously updated with new data and used to predict future states and test "what-if" scenarios. WarfarinTwin's twin holds:
-
-| Layer | Contents |
-|---|---|
-| **Static profile** | Age, sex, height, weight, CYP2C9, VKORC1, CYP4F2 genotype, interacting drugs (e.g. amiodarone, CYP2C9 inducers) |
-| **Dynamic state** | Daily warfarin dose, INR readings, optional wearable/vitals signals |
-| **Outputs** | Predicted next-day INR, risk of INR ≥4, predicted time in therapeutic range, dose what-if comparison |
-
-The twin **synchronizes** after each new INR: it updates its estimate of that patient's drug response and re-forecasts.
-
-## 4. What the system predicts
-
-1. **Next-day INR** (regression).
-2. **Risk of INR ≥4 in the next 48 hours** (binary classification, the headline safety alert).
-3. **Time in therapeutic range (TTR)** across days 0 to 11 (Rosendaal interpolation).
-4. **What-if simulation:** predicted INR curve for candidate dose A vs dose B for the same virtual patient.
-5. **Initial dose estimate** from the IWPC and Gage algorithms (baseline / starting point).
-
-## 5. Architecture
-
-```
-            +---------------------------+
-            |   Data layer              |
-            |  - Synthetic cohort       |
-            |  - IWPC (PharmGKB)        |
-            |  - MIMIC-IV (validation)  |
-            +-------------+-------------+
-                          |
-                          v
-            +---------------------------+
-            |   Patient profile builder |
-            |  covariates + genotypes   |
-            +-------------+-------------+
-                          |
-                          v
-   +----------------------------------------------------+
-   |                  TWIN ENGINE                       |
-   |                                                    |
-   |  [A] Mechanistic PK/PD (Hamberg-style)             |
-   |        + Bayesian per-patient updating             |
-   |  [B] Sequence model (GRU/LSTM)                     |
-   |  [C] Gradient boosting (lag features)              |
-   |                                                    |
-   |  Hybrid stack: A's prediction -> feature for B, C  |
-   |  Final blend + conformal prediction intervals      |
-   +--------------------------+-------------------------+
-                              |
-                              v
-            +---------------------------+
-            |  Outputs & dashboard      |
-            |  - INR forecast + band    |
-            |  - INR >= 4 risk alert    |
-            |  - Dose what-if           |
-            +---------------------------+
-```
-
-### 5.1 Baselines
-- **IWPC pharmacogenetic dosing algorithm** (Klein et al., *NEJM* 2009): age, height, weight, race, VKORC1, CYP2C9, and enzyme inducer/inhibitor use.
-- **Gage algorithm** (WarfarinDosing.org), as used in GIFT.
-- **Fixed 5 mg/day** reference dose.
-
-### 5.2 Models
-- **Mechanistic:** a population PK/PD model in the style of Hamberg et al., solved as differential equations, with Bayesian (MAP) updating after each observed INR.
-- **Machine learning:** GRU/LSTM over the daily sequence (dose, INR, covariates), and XGBoost/LightGBM on lag features.
-
-### 5.3 Ensemble
-- **Hybrid residual stack:** the mechanistic prediction is fed to the ML models as an input feature so they learn what the PK/PD model misses.
-- **Weighted blend** of mechanistic + GRU + boosting, with weights fit on a validation split.
-- **Conformal prediction intervals** for calibrated uncertainty bands on the INR curve.
-
-## 6. Data
-
-| Source | Use | Access |
-|---|---|---|
-| **Synthetic cohort (this repo)** | Primary training and simulation data | Generated locally by `data/synthetic/` |
-| **IWPC dataset (PharmGKB)** | Starting-dose model and baseline comparison (cross-sectional, no daily INR) | Public download at `pharmgkb.org/downloads` |
-| **MIMIC-IV (PhysioNet)** | Real-world validation of INR trajectories (no genotypes) | Credentialed access: PhysioNet account, CITI "Data or Specimens Only Research" training, signed data use agreement |
-
-### Synthetic cohort generation
-Because no public dataset combines genotype, daily post-arthroplasty INR, and dosing, we simulate virtual patients:
-
-1. Sample covariates (age ≥65, sex, weight, height, interacting drugs) from GIFT-like distributions.
-2. Sample CYP2C9, VKORC1, and CYP4F2 genotypes from published allele frequencies (with a population switch for Indian-relevant frequencies).
-3. Simulate 11-day INR trajectories with a Hamberg-style PK/PD model, adding inter-individual variability and measurement noise.
-4. Apply two dosing arms (genotype-guided vs clinically guided) to reproduce a GIFT-style comparison.
-
-**Important:** synthetic data reflects the assumptions of the simulator. Results on it show that the pipeline works, not that it will match real patients. Real-world validation uses MIMIC-IV where possible.
-
-> **Data licensing:** MIMIC-IV and other credentialed data must **never** be committed to this repository. The data use agreement prohibits redistribution. Only code and synthetic data are tracked in Git.
-
-## 7. Evaluation plan
-
-- **Splitting:** by patient (grouped cross-validation), never by visit, to prevent leakage.
-- **INR forecast:** MAE, RMSE, and percentage of predictions within ±0.5 INR.
-- **INR ≥4 alert:** AUROC, AUPRC, recall at fixed precision, calibration plot.
-- **Baseline comparison:** IWPC, Gage, fixed-dose, mechanistic-only, ML-only, and full ensemble.
-- **Trial-level sanity check:** in simulation, does the genotype-guided arm show a GIFT-like relative reduction in adverse events?
-- **External check:** INR trajectory performance on MIMIC-IV warfarin patients.
-- **Subgroup analysis:** performance by genotype group and by ancestry-linked allele frequency setting.
-- **Uncertainty:** empirical coverage of conformal intervals.
-
-### Results
-*To be filled in as experiments complete.*
-
-| Model | INR MAE | % within ±0.5 | INR ≥4 AUROC |
+| Part | What it does | Data | Notebook |
 |---|---|---|---|
-| Fixed dose | TBD | TBD | TBD |
-| IWPC / Gage | TBD | TBD | TBD |
-| PK/PD + Bayesian | TBD | TBD | TBD |
-| GRU | TBD | TBD | TBD |
-| Boosting | TBD | TBD | TBD |
-| **Hybrid ensemble** | TBD | TBD | TBD |
+| **1. Starting-dose model** | Predicts the stable weekly dose from age, weight, height, sex, ancestry, CYP2C9, VKORC1, interacting drugs | Real: IWPC (5,410 patients) | `notebooks/01_starting_dose_IWPC.ipynb` |
+| **2. Digital twin** | Simulates post-surgery patients; forecasts INR 1 and 2 days ahead; alerts for INR >= 4; compares candidate doses | Simulated (calibrated to Part 1) | `notebooks/02_digital_twin_simulation.ipynb` |
 
-## 8. Repository structure
+### Architecture
+
+```
+ IWPC (real patients) --> Part 1: starting-dose models --> predicted stable dose
+                                                              |
+                                                              v
+        Virtual patient simulator (CYP2C9 -> elimination speed, response delay, hidden dose
+        requirement, day-to-day noise, random drug interactions)
+                                                              |
+                          dosing strategies --> daily INR + dose histories
+                                                              |
+              +-----------------------+-----------------------+
+              v                       v                       v
+   [A] Mechanistic Bayesian   [B] Gradient-boosting    [C] Hybrid = twin forecast
+       twin (updates a            forecaster                + ML correction
+       distribution over this                               + conformal 90% bands
+       patient's sensitivity)
+              |                       |                       |
+              +-----------------------+-----------------------+
+                                      v
+       INR forecast (1 and 2 days) | P(INR >= 4) alert | dose "what-if" comparison
+```
+
+## 3. Results
+
+### Part 1: starting dose (real IWPC data, 5,410 patients)
+
+Hold-out test (random 80/20, stratified by ancestry; imputation fit on training data only):
+
+| Model | MAE (mg/week) | R2 | Within 20% of true dose |
+|---|---|---|---|
+| Fixed 5 mg/day | 12.82 | -0.065 | 29.0% |
+| IWPC clinical equation | 9.69 | 0.282 | 40.6% |
+| IWPC pharmacogenetic equation | 8.73 | 0.413 | 43.7% |
+| Ridge (sqrt dose) | 8.57 | 0.420 | 44.4% |
+| Random Forest | 8.85 | 0.376 | 44.3% |
+| Gradient Boosting | 8.58 | 0.404 | 45.4% |
+| **Stacked Ensemble** | **8.49** | **0.423** | **45.2%** |
+
+On **unseen hospital sites** (5-fold grouped by site), the IWPC pharmacogenetic equation (MAE 8.88, 43.7% within 20%) is as good as the ensemble (MAE 9.04, 42.7%).
+
+**Honest reading:** machine learning improves only marginally over the published IWPC equation. Genotype information matters far more than model choice (VKORC1 is the most important feature, then age, CYP2C9, weight). Dosing is hardest for patients with unknown VKORC1 and for high-dose patients (>49 mg/week).
+
+*Note:* `INR on therapeutic dose` was deliberately **excluded** as a feature because it is measured after the stable dose is reached (data leakage).
+
+### Part 2a: in-silico mini-trial (1,500 virtual patients, same patients in every arm)
+
+| Starting strategy | INR >= 4 (any, days 1-11) | INR >= 5 | Time in range 2-3 (days 4-11) |
+|---|---|---|---|
+| Flat 5 mg/day (reference) | 51.1% | 23.1% | 32.6% |
+| Clinical-factors start (no genotype) | 25.3% | 6.8% | 38.6% |
+| **Genotype-guided start** | **16.3%** | **2.3%** | **43.6%** |
+
+Genotype-guided vs clinical-factors start: **35.8% relative reduction** in INR >= 4 (absolute difference 9.1 points, bootstrap 95% CI 7.1 to 11.1). The result depends on how much of the unexplained dose variability is real biology (`VAR_SCALE`):
+
+| VAR_SCALE | INR >= 4 clinical | INR >= 4 genotype | Relative reduction |
+|---|---|---|---|
+| 0.5 | 24.4% | 14.0% | 42.6% |
+| 0.7 (default) | 27.7% | 17.7% | 36.1% |
+| 1.0 | 32.2% | 23.1% | 28.3% |
+
+We did **not** tune the simulator to reproduce GIFT's published numbers. Absolute event rates here are higher than GIFT's; compare only the direction and rough size of the effect.
+
+### Part 2b: forecasting INR (4,000 virtual patients, split by patient 60/20/20)
+
+| Horizon | Model | MAE (INR) | Within +-0.5 INR |
+|---|---|---|---|
+| 1 day | Persistence (INR today) | 0.373 | 73.8% |
+| 1 day | Mechanistic twin | 0.252 | 86.7% |
+| 1 day | ML only | 0.216 | 90.2% |
+| 1 day | **Hybrid** | **0.215** | **90.1%** |
+| 2 days | Persistence | 0.706 | 47.7% |
+| 2 days | Mechanistic twin | 0.355 | 78.1% |
+| 2 days | ML only | 0.310 | 82.2% |
+| 2 days | **Hybrid** | **0.305** | **82.1%** |
+
+Conformal 90% bands reached **90.3%** (1 day) and **89.7%** (2 days) coverage on held-out patients.
+
+### Part 2c: INR >= 4 alert (about 5% of rows are events)
+
+| Horizon | Model | AUROC | AUPRC |
+|---|---|---|---|
+| 1 day | Persistence | 0.950 | 0.575 |
+| 1 day | Mechanistic twin | 0.958 | 0.675 |
+| 1 day | ML only | 0.980 | 0.785 |
+| 1 day | **Hybrid** | **0.982** | **0.790** |
+| 2 days | Persistence | 0.819 | 0.219 |
+| 2 days | Mechanistic twin | 0.911 | 0.525 |
+| 2 days | ML only | 0.966 | 0.663 |
+| 2 days | **Hybrid** | **0.967** | **0.672** |
+
+### Part 2d: the key test, "what if I change the dose?"
+
+The simulator gives ground truth, so we re-ran 600 test patients with the day-4 and day-5 doses multiplied by 0, 0.5, 0.75, 1.25 and 1.5, and compared predicted vs true change in INR two mornings later.
+
+| Model | Correlation (predicted vs true change) | Direction correct | Mean error (INR) |
+|---|---|---|---|
+| **Mechanistic twin** | **0.973** | **100%** | **0.058** |
+| ML only | -0.440 | 52.1% | 0.378 |
+| Hybrid | -0.131 | 76.1% | 0.381 |
+
+**Why this matters:** in training data, doses were chosen *in response to INR* (a high INR leads to a held dose). Pure ML learns "dose held goes with high INR" and gets cause and effect wrong (confounding by indication). The mechanistic twin models how the drug actually works, so it does not. For routine forecasting all models are similar; for dose decisions, only the twin is reliable. The hybrid is best for point forecasts, the twin is the engine for comparing doses.
+
+Plots are in `outputs/`: `holdout_plots.png`, `feature_importance.png`, `simulator_sanity.png`, `forecast_whatif_plots.png`, `example_patients.png`.
+
+## 4. Assumptions and limitations (please read)
+
+| Assumption | Value | Where in code |
+|---|---|---|
+| Relative elimination speed by CYP2C9 genotype | 1.0 / 0.85 / 0.65 / 0.70 / 0.50 / 0.30 (*1/*1 ... *3/*3) | `CL_MULT` (illustrative; not taken from a paper) |
+| Share of IWPC dose-residual spread treated as real biology | 0.7 (sensitivity tested above) | `VAR_SCALE` |
+| INR response curve and delay | Imax 12, gamma 2.5, 3 transit compartments, ~2.5 day mean | constants |
+| Titration protocol | simple inpatient-style rules | `TitrationPolicy` |
+| Virtual patient age | mean 72, SD 6, range 65-90 | `sample_cohort` (align with GIFT Table 1 later) |
+| Random drug-interaction event | 8% of patients | `sample_cohort` |
+| Target INR | 2.5 | `TARGET_INR` |
+
+- **Part 2 is a simulation study.** The twin shares the simulator's structure, so its accuracy and its edge in the what-if test are **optimistic**. Validation on real longitudinal INR data (e.g. MIMIC-IV, which requires credentialed access) is the main future work.
+- The simulator's structure is *inspired by* published warfarin K-PD models (e.g. Hamberg et al.), but its parameters are **not copied** from those papers.
+- The IWPC equation coefficients in Part 1 were entered from the published paper and sanity-checked (the genotype equation beats the clinical one, MAE about 8.7); please verify against Klein et al. 2009 before relying on them.
+- IWPC data are from 2008 and under-represent some populations. Unknown genotypes are modelled as their own category.
+- Absolute event rates in the simulation are not calibrated to real-world rates.
+
+## 5. Repository layout
 
 ```
 warfarin-twin/
 ├── README.md
-├── data/
-│   ├── synthetic/        # simulator and generated cohorts
-│   ├── iwpc/             # place downloaded IWPC file here (not committed)
-│   └── mimic/            # local only (not committed, DUA)
-├── src/
-│   ├── simulator/        # PK/PD virtual patient generator
-│   ├── baselines/        # IWPC, Gage, fixed dose
-│   ├── models/           # PK/PD+Bayes, GRU, boosting, ensemble
-│   ├── evaluation/       # metrics, TTR, conformal intervals
-│   └── app/              # dashboard (Streamlit)
-├── notebooks/
-├── tests/
 ├── requirements.txt
-└── .gitignore            # excludes data/iwpc, data/mimic
+├── LICENSE
+├── notebooks/
+│   ├── 01_starting_dose_IWPC.ipynb
+│   └── 02_digital_twin_simulation.ipynb
+├── models/                      # trained outputs of the notebooks (re-creatable by running them)
+│   ├── starting_dose_model.joblib
+│   └── inr_forecaster_bundle.joblib
+├── outputs/                     # result tables (CSV) and figures (PNG)
+└── data/
+    └── iwpc/                    # see Data section
 ```
 
-## 9. Getting started
+**What the files are:**
+- `notebooks/` is the **code**: everything needed to reproduce every result.
+- `models/*.joblib` are the **saved trained models** produced by the notebooks, so others can use them without retraining. They are optional: running the notebooks recreates them. If a model fails to load (different scikit-learn version), just rerun the notebooks.
+- `outputs/` holds the result tables and figures quoted in this README.
 
-```bash
-git clone https://github.com/<your-username>/warfarin-twin.git
-cd warfarin-twin
-pip install -r requirements.txt
+## 6. How to run (Google Colab)
 
-# 1. Generate synthetic cohort
-python -m src.simulator.generate --n 5000 --out data/synthetic/cohort.csv
+1. Open `notebooks/01_starting_dose_IWPC.ipynb` in Colab (File > Open notebook > GitHub, or upload it). Run all cells and upload the IWPC `.xls` when asked. This creates `models/starting_dose_model.joblib`.
+2. Open `notebooks/02_digital_twin_simulation.ipynb`. Upload the IWPC `.xls` and `starting_dose_model.joblib` when asked (if the model is missing, a quick fallback is trained). Run all cells.
+3. Total runtime is a few minutes. Python 3 with numpy, pandas, scipy, scikit-learn, matplotlib, joblib, xlrd (see `requirements.txt`).
 
-# 2. Train and evaluate
-python -m src.models.train --config configs/ensemble.yaml
-python -m src.evaluation.run --config configs/eval.yaml
+Using the twin on one patient (end of Notebook 2): `forecast_patient(profile, inr_history, dose_history, candidate_doses_tonight)`.
 
-# 3. Launch the dashboard
-streamlit run src/app/app.py
-```
-*(Commands are the intended interface and will be finalized as the code lands.)*
+## 7. Data
 
-## 10. Limitations
+- **IWPC dataset** ("Warfarin Consortium Combined Data Set", March 2008), from PharmGKB / ClinPGx: https://www.pharmgkb.org/downloads . 5,700 patients; 5,410 usable (reached stable dose with a recorded dose). The file is distributed by PharmGKB under its own license (CC BY-NC-SA 4.0 according to the bio.tools listing); please download it from the source and respect its terms. Credit: International Warfarin Pharmacogenetics Consortium; PharmGKB.
+- **Simulated cohorts** are generated by the notebooks; no patient data other than IWPC is used.
 
-- Synthetic training data depends on simulator assumptions.
-- IWPC is cross-sectional and does not contain daily INR trajectories.
-- MIMIC-IV is a single US center and lacks genotype data.
-- Early algorithms performed better in Europeans than in Asian and African populations; population-specific variants (e.g. CYP4F2) and diverse data are needed for fairness.
-- Not clinically validated. Not for patient care.
-
-## 11. Related work
+## 8. Related work
 
 - GIFT trial: Gage et al., *JAMA* 2017.
 - IWPC algorithm: Klein et al., *NEJM* 2009.
-- CPIC guideline for pharmacogenetics-guided warfarin dosing (2016/2017 update): Johnson et al.
-- LSTM INR modeling (*Frontiers in Cardiovascular Medicine*, 2022) and the AI-WAR application.
-- Hamberg PK/PD model and Bayesian decision support tool (*BMC Medical Informatics and Decision Making*, 2014).
-- CURATE.AI applied to warfarin dosing.
+- CPIC guideline for pharmacogenetics-guided warfarin dosing (Johnson et al., 2017 update).
+- LSTM INR modeling (*Frontiers in Cardiovascular Medicine*, 2022) and warfarin PK/PD Bayesian decision support (Hamberg et al.).
+- Warfarin dose-prediction pipelines trained on IWPC (static dose prediction).
 
-WarfarinTwin builds on this work and adds: (1) anchoring to the GIFT post-arthroplasty setting, (2) a twin framing with live updating and what-if simulation, (3) inclusion of CYP4F2, and (4) a population-diversity analysis.
+**What is different here:** a GIFT-anchored post-arthroplasty setting, a twin with live Bayesian updating, dose what-if comparison validated against simulator ground truth, uncertainty bands, and a demonstration of why mechanistic structure matters for causal questions.
 
-## 12. Team
+## 9. Team
 
 - **[Your name]**: project lead, modeling
 - **[Friend's name]**: data acquisition
-- **[Other members]**
 
-## 13. License
+## 10. License
 
-Code released under the MIT License (add a `LICENSE` file). Synthetic data is released under CC BY 4.0. Third-party datasets remain under their original licenses.
+Code: MIT License (add a `LICENSE` file). Third-party data remain under their original licenses.
 
-## 14. References
+## 11. References
 
 1. Gage BF, et al. Effect of genotype-guided warfarin dosing on clinical events and anticoagulation control among patients undergoing hip or knee arthroplasty: the GIFT randomized clinical trial. *JAMA*. 2017;318(12):1115-1124.
 2. International Warfarin Pharmacogenetics Consortium; Klein TE, et al. Estimation of the warfarin dose with clinical and pharmacogenetic data. *N Engl J Med*. 2009;360:753-764.
 3. Johnson JA, et al. CPIC guideline for pharmacogenetics-guided warfarin dosing: 2017 update. *Clin Pharmacol Ther*. 2017;102(3):397-404.
 4. Hamberg AK, et al. A PK-PD model for predicting the impact of age, CYP2C9, and VKORC1 genotype on individualization of warfarin therapy. *Clin Pharmacol Ther*. 2007.
-5. Johnson AEW, et al. MIMIC-IV. *Sci Data*. 2023.
