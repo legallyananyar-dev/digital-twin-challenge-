@@ -1,0 +1,4 @@
+model,"corr(pred Δ, true Δ)",direction correct,mean |Δ error| (INR)
+Mechanistic twin only,0.973,1.0,0.057
+ML only (no twin),-0.384,0.464,0.388
+Hybrid (twin + ML residual),-0.164,0.753,0.413
