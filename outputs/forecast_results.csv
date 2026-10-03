@@ -1,0 +1,11 @@
+horizon,model,MAE,within ±0.5 INR,R2,coverage,rel. half-width
+1 day,Persistence (INR today),0.376,0.735,0.735,,
+1 day,Mechanistic twin only,0.253,0.866,0.858,,
+1 day,ML only (no twin),0.217,0.901,0.907,,
+1 day,Hybrid (twin + ML residual),0.216,0.903,0.907,,
+1 day,Hybrid 90% conformal band,,,,0.907,0.201
+2 day,Persistence (INR today),0.712,0.478,0.079,,
+2 day,Mechanistic twin only,0.357,0.782,0.721,,
+2 day,ML only (no twin),0.311,0.82,0.806,,
+2 day,Hybrid (twin + ML residual),0.307,0.818,0.809,,
+2 day,Hybrid 90% conformal band,,,,0.898,0.267
