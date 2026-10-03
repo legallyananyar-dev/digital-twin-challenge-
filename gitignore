@@ -1,0 +1,6 @@
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+.DS_Store
+# restricted datasets must never be committed (e.g. MIMIC)
+data/mimic/
