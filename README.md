@@ -203,7 +203,7 @@ Using the twin on one patient (end of Notebook 2): `forecast_patient(profile, in
 
 ## 10. License
 
-Code: MIT License (add a `LICENSE` file). Third-party data remain under their original licenses.
+ MIT License 
 
 ## 11. References
 
